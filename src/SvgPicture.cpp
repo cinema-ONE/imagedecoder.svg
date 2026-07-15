@@ -98,36 +98,28 @@ bool SvgPicture::Decode(uint8_t* pixels,
     return false;
   }
 
-  // lunasvg renders to ARGB32 Premultiplied; convert in place to plain
-  // (non-premultiplied) RGBA byte order first either way.
-  bitmap.convertToRGBA();
-
-  const uint8_t* src = bitmap.data();
   const unsigned int srcStride = static_cast<unsigned int>(bitmap.stride());
-  const unsigned int bytesPerPixel = 4;
 
-  if (format == ADDON_IMG_FMT_RGBA8)
+  if (format == ADDON_IMG_FMT_A8R8G8B8)
   {
+    // lunasvg's native Bitmap format is ARGB32 Premultiplied, which is
+    // already byte-for-byte B,G,R,A in memory on a little-endian target -
+    // the same layout ADDON_IMG_FMT_A8R8G8B8 wants, premultiplied alpha
+    // included (the norm for GPU texture compositing). No conversion needed,
+    // straight memcpy.
+    const uint8_t* src = bitmap.data();
     const unsigned int copyBytesPerRow = std::min<unsigned int>(srcStride, pitch);
     for (unsigned int y = 0; y < height; ++y)
       std::memcpy(pixels + y * pitch, src + y * srcStride, copyBytesPerRow);
   }
-  else // ADDON_IMG_FMT_A8R8G8B8 - same 32bpp size, but byte order is B,G,R,A rather than R,G,B,A
+  else // ADDON_IMG_FMT_RGBA8
   {
+    // Plain (non-premultiplied) RGBA byte order - convert in place.
+    bitmap.convertToRGBA();
+    const uint8_t* src = bitmap.data();
+    const unsigned int copyBytesPerRow = std::min<unsigned int>(srcStride, pitch);
     for (unsigned int y = 0; y < height; ++y)
-    {
-      const uint8_t* srcRow = src + y * srcStride;
-      uint8_t* dstRow = pixels + y * pitch;
-      for (unsigned int x = 0; x < width; ++x)
-      {
-        const uint8_t* s = srcRow + x * bytesPerPixel;
-        uint8_t* d = dstRow + x * bytesPerPixel;
-        d[0] = s[2]; // B
-        d[1] = s[1]; // G
-        d[2] = s[0]; // R
-        d[3] = s[3]; // A
-      }
-    }
+      std::memcpy(pixels + y * pitch, src + y * srcStride, copyBytesPerRow);
   }
 
   return true;
