@@ -77,12 +77,15 @@ bool SvgPicture::Decode(uint8_t* pixels,
   if (!m_document)
     return false;
 
-  if (format != ADDON_IMG_FMT_RGBA8)
+  if (format != ADDON_IMG_FMT_RGBA8 && format != ADDON_IMG_FMT_A8R8G8B8)
   {
-    // Keep the first version deliberately narrow - RGBA8 covers Kodi's skin
-    // texture path, which is all this add-on is aimed at right now.
-    kodi::Log(ADDON_LOG_ERROR, "%s: Unsupported target format (%d), only ADDON_IMG_FMT_RGBA8 "
-              "is implemented",
+    // Kodi's skin texture path actually requests ADDON_IMG_FMT_A8R8G8B8, not
+    // RGBA8 as originally assumed - keeping this deliberately narrow to just
+    // the two byte orders actually observed/needed rather than all four
+    // ADDON_IMG_FMT_* variants.
+    kodi::Log(ADDON_LOG_ERROR,
+              "%s: Unsupported target format (%d), only ADDON_IMG_FMT_RGBA8/A8R8G8B8 are "
+              "implemented",
               __func__, static_cast<int>(format));
     return false;
   }
@@ -95,17 +98,37 @@ bool SvgPicture::Decode(uint8_t* pixels,
     return false;
   }
 
-  // lunasvg renders to ARGB32 Premultiplied; convert in place to plain RGBA
-  // to match ADDON_IMG_FMT_RGBA8's expected byte order and (non-premultiplied)
-  // alpha.
+  // lunasvg renders to ARGB32 Premultiplied; convert in place to plain
+  // (non-premultiplied) RGBA byte order first either way.
   bitmap.convertToRGBA();
 
   const uint8_t* src = bitmap.data();
   const unsigned int srcStride = static_cast<unsigned int>(bitmap.stride());
-  const unsigned int copyBytesPerRow = std::min<unsigned int>(srcStride, pitch);
+  const unsigned int bytesPerPixel = 4;
 
-  for (unsigned int y = 0; y < height; ++y)
-    std::memcpy(pixels + y * pitch, src + y * srcStride, copyBytesPerRow);
+  if (format == ADDON_IMG_FMT_RGBA8)
+  {
+    const unsigned int copyBytesPerRow = std::min<unsigned int>(srcStride, pitch);
+    for (unsigned int y = 0; y < height; ++y)
+      std::memcpy(pixels + y * pitch, src + y * srcStride, copyBytesPerRow);
+  }
+  else // ADDON_IMG_FMT_A8R8G8B8 - same 32bpp size, but byte order is B,G,R,A rather than R,G,B,A
+  {
+    for (unsigned int y = 0; y < height; ++y)
+    {
+      const uint8_t* srcRow = src + y * srcStride;
+      uint8_t* dstRow = pixels + y * pitch;
+      for (unsigned int x = 0; x < width; ++x)
+      {
+        const uint8_t* s = srcRow + x * bytesPerPixel;
+        uint8_t* d = dstRow + x * bytesPerPixel;
+        d[0] = s[2]; // B
+        d[1] = s[1]; // G
+        d[2] = s[0]; // R
+        d[3] = s[3]; // A
+      }
+    }
+  }
 
   return true;
 }
