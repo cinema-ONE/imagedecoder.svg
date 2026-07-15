@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon
+  id="imagedecoder.svg"
+  version="0.0.1"
+  name="SVG image decoder"
+  provider-name="pannal">
+  <requires>
+    <import addon="xbmc.gui" version="5.17.0"/>
+  </requires>
+  <extension
+    point="kodi.imagedecoder"
+    library_@PLATFORM@="@LIBRARY_FILENAME@">
+    <support>
+      <mimetype name="image/svg+xml">
+        <extension>.svg</extension>
+        <description>Scalable Vector Graphics</description>
+      </mimetype>
+    </support>
+  </extension>
+  <extension point="xbmc.addon.metadata">
+    <platform>@PLATFORM@</platform>
+    <license>GPL-2.0-or-later</license>
+    <source>https://github.com/pannal/imagedecoder.svg</source>
+    <assets>
+      <icon>icon.png</icon>
+    </assets>
+    <summary lang="en_GB">SVG file format decoder</summary>
+    <description lang="en_GB">Scalable Vector Graphics (SVG) is a vector image format, rendered
+sharp at any requested resolution instead of a single fixed pixel size.[CR][CR]Rendering is
+provided by lunasvg (https://github.com/sammycage/lunasvg), MIT licensed.</description>
+  </extension>
+</addon>

@@ -1,0 +1,22 @@
+# build artifacts
+build/
+imagedecoder.svg/addon.xml
+
+# commonly used editors
+*.swp
+*.project
+*.cproject
+.classpath
+*.sublime-*
+.settings/
+*.kdev4
+*~
+/.idea
+.idea/
+/*.patch
+.vs/
+
+# General MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
