@@ -1,5 +1,5 @@
 /*
- *  Copyright (C) 2026 pannal
+ *  Copyright (C) 2026 cinemaONE
  *
  *  SPDX-License-Identifier: GPL-2.0-or-later
  *  See LICENSE.md for more information.

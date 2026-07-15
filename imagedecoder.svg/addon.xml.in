@@ -3,7 +3,7 @@
   id="imagedecoder.svg"
   version="0.0.1"
   name="SVG image decoder"
-  provider-name="pannal">
+  provider-name="cinemaONE">
   <requires>
     <import addon="xbmc.gui" version="5.17.0"/>
   </requires>
@@ -20,7 +20,6 @@
   <extension point="xbmc.addon.metadata">
     <platform>@PLATFORM@</platform>
     <license>GPL-2.0-or-later</license>
-    <source>https://github.com/pannal/imagedecoder.svg</source>
     <assets>
       <icon>icon.png</icon>
     </assets>
