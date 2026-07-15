@@ -4,9 +4,7 @@
   version="0.0.1"
   name="SVG image decoder"
   provider-name="cinemaONE">
-  <requires>
-    <import addon="xbmc.gui" version="5.17.0"/>
-  </requires>
+  <requires>@ADDON_DEPENDS@</requires>
   <extension
     point="kodi.imagedecoder"
     library_@PLATFORM@="@LIBRARY_FILENAME@">
