@@ -34,6 +34,26 @@ bool SvgPicture::SupportsFile(const std::string& file)
   return std::strstr(header, "<svg") != nullptr || std::strstr(header, "<?xml") != nullptr;
 }
 
+namespace
+{
+// Kodi's skin texture path (CTexture::LoadIImage) always calls
+// LoadImageFromMemory with its GPU's maxTextureSize (e.g. 16383) as the
+// in/out width/height - confirmed via kodi.log showing exactly that value
+// requested for a 90px-tall control. That's a generic upper-bound cap, not a
+// real per-control size hint: when the control itself has no explicit ideal
+// size to pass down, Kodi falls back to whatever this function reports as
+// the image's "native" size and decodes at that. Echoing the cap straight
+// back (as if it were a genuine request) is what caused a later runaway
+// supersampled allocation; echoing the SVG's own tiny export-time viewBox
+// size (e.g. 24x24) is what caused the original blurry/aliased icon, since
+// that then gets GPU-upscaled ~4x with no say from us. Neither the cap nor
+// the raw viewBox is a usable "native size" for a vector image, so we report
+// a fixed, decent resolution instead whenever the incoming hint doesn't look
+// like a genuine specific request.
+constexpr unsigned int kNativeSize = 512;
+constexpr unsigned int kMaxPlausibleHint = 4096; // no UI icon control asks for more than this
+} // namespace
+
 bool SvgPicture::LoadImageFromMemory(const std::string& mimetype,
                                      const uint8_t* buffer,
                                      size_t bufSize,
@@ -48,13 +68,27 @@ bool SvgPicture::LoadImageFromMemory(const std::string& mimetype,
     return false;
   }
 
-  // Honor Kodi's requested size if given - SVG is vector data, so we can
-  // rasterize at exactly whatever resolution is asked for, sharp every time,
-  // instead of being limited to (or upscaling from) one "native" pixel size.
-  if (width == 0 || height == 0)
+  if (width == 0 || height == 0 || width > kMaxPlausibleHint || height > kMaxPlausibleHint)
   {
-    width = static_cast<unsigned int>(m_document->width());
-    height = static_cast<unsigned int>(m_document->height());
+    double docWidth = m_document->width();
+    double docHeight = m_document->height();
+    if (docWidth <= 0 || docHeight <= 0)
+    {
+      docWidth = kNativeSize;
+      docHeight = kNativeSize;
+    }
+
+    const double aspect = docWidth / docHeight;
+    if (aspect >= 1.0)
+    {
+      width = kNativeSize;
+      height = static_cast<unsigned int>(kNativeSize / aspect + 0.5);
+    }
+    else
+    {
+      height = kNativeSize;
+      width = static_cast<unsigned int>(kNativeSize * aspect + 0.5);
+    }
   }
 
   if (width == 0 || height == 0)
@@ -90,6 +124,17 @@ bool SvgPicture::Decode(uint8_t* pixels,
   }
 
   kodi::Log(ADDON_LOG_DEBUG, "%s: Kodi requested decode at %ux%u", __func__, width, height);
+
+  // Hard safety net: LoadImageFromMemory() is what should normally keep this
+  // sane (see kMaxPlausibleHint there), but Decode()'s width/height come from
+  // Kodi independently of that - refuse anything absurd outright rather than
+  // ever again attempting a multi-gigabyte supersampled allocation.
+  if (width > kMaxPlausibleHint || height > kMaxPlausibleHint)
+  {
+    kodi::Log(ADDON_LOG_ERROR, "%s: Refusing implausible decode size %ux%u", __func__, width,
+              height);
+    return false;
+  }
 
   // plutovg (lunasvg's rasterizer) is a fork of FreeType's own "smooth"
   // scanline rasterizer and always renders with AA on, so it isn't that the
