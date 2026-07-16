@@ -10,7 +10,6 @@
 #include <kodi/Filesystem.h>
 
 #include <algorithm>
-#include <cstring>
 
 SvgPicture::SvgPicture(const kodi::addon::IInstanceInfo& instance)
   : CInstanceImageDecoder(instance)
@@ -90,36 +89,85 @@ bool SvgPicture::Decode(uint8_t* pixels,
     return false;
   }
 
-  lunasvg::Bitmap bitmap = m_document->renderToBitmap(static_cast<int>(width),
-                                                       static_cast<int>(height));
-  if (bitmap.isNull())
+  kodi::Log(ADDON_LOG_DEBUG, "%s: Kodi requested decode at %ux%u", __func__, width, height);
+
+  // plutovg (lunasvg's rasterizer) is a fork of FreeType's own "smooth"
+  // scanline rasterizer and always renders with AA on, so it isn't that the
+  // SVG comes out unantialiased - but its coverage-to-alpha mapping is a
+  // plain linear one, unlike FreeType's text path which is perceptually
+  // gamma-tuned, so edges read as harder even at the same target resolution.
+  // Rendering at a higher internal resolution and box-averaging back down
+  // closes most of that gap. The averaging is exact here because lunasvg's
+  // native bitmap is premultiplied alpha - a plain per-channel mean over each
+  // NxN block is a correct downsample with no straight-alpha color bleed at
+  // partially-transparent edges.
+  constexpr unsigned int kSupersample = 4;
+  const unsigned int renderWidth = width * kSupersample;
+  const unsigned int renderHeight = height * kSupersample;
+
+  lunasvg::Bitmap hiRes = m_document->renderToBitmap(static_cast<int>(renderWidth),
+                                                      static_cast<int>(renderHeight));
+  if (hiRes.isNull())
   {
-    kodi::Log(ADDON_LOG_ERROR, "%s: Rendering SVG to %ux%u failed", __func__, width, height);
+    kodi::Log(ADDON_LOG_ERROR, "%s: Rendering SVG to %ux%u failed", __func__, renderWidth,
+              renderHeight);
     return false;
   }
 
-  const unsigned int srcStride = static_cast<unsigned int>(bitmap.stride());
+  constexpr unsigned int kSamples = kSupersample * kSupersample;
+  const uint8_t* src = hiRes.data();
+  const unsigned int srcStride = static_cast<unsigned int>(hiRes.stride());
 
-  if (format == ADDON_IMG_FMT_A8R8G8B8)
+  for (unsigned int y = 0; y < height; ++y)
   {
-    // lunasvg's native Bitmap format is ARGB32 Premultiplied, which is
-    // already byte-for-byte B,G,R,A in memory on a little-endian target -
-    // the same layout ADDON_IMG_FMT_A8R8G8B8 wants, premultiplied alpha
-    // included (the norm for GPU texture compositing). No conversion needed,
-    // straight memcpy.
-    const uint8_t* src = bitmap.data();
-    const unsigned int copyBytesPerRow = std::min<unsigned int>(srcStride, pitch);
-    for (unsigned int y = 0; y < height; ++y)
-      std::memcpy(pixels + y * pitch, src + y * srcStride, copyBytesPerRow);
-  }
-  else // ADDON_IMG_FMT_RGBA8
-  {
-    // Plain (non-premultiplied) RGBA byte order - convert in place.
-    bitmap.convertToRGBA();
-    const uint8_t* src = bitmap.data();
-    const unsigned int copyBytesPerRow = std::min<unsigned int>(srcStride, pitch);
-    for (unsigned int y = 0; y < height; ++y)
-      std::memcpy(pixels + y * pitch, src + y * srcStride, copyBytesPerRow);
+    uint8_t* dstRow = pixels + y * pitch;
+    for (unsigned int x = 0; x < width; ++x)
+    {
+      unsigned int sumB = 0, sumG = 0, sumR = 0, sumA = 0;
+      for (unsigned int sy = 0; sy < kSupersample; ++sy)
+      {
+        const uint8_t* srcPx = src + (y * kSupersample + sy) * srcStride + (x * kSupersample) * 4;
+        for (unsigned int sx = 0; sx < kSupersample; ++sx)
+        {
+          sumB += srcPx[0];
+          sumG += srcPx[1];
+          sumR += srcPx[2];
+          sumA += srcPx[3];
+          srcPx += 4;
+        }
+      }
+      // lunasvg's native premultiplied ARGB32 is already B,G,R,A in memory on
+      // a little-endian target.
+      const uint8_t b = static_cast<uint8_t>((sumB + kSamples / 2) / kSamples);
+      const uint8_t g = static_cast<uint8_t>((sumG + kSamples / 2) / kSamples);
+      const uint8_t r = static_cast<uint8_t>((sumR + kSamples / 2) / kSamples);
+      const uint8_t a = static_cast<uint8_t>((sumA + kSamples / 2) / kSamples);
+
+      uint8_t* dst = dstRow + x * 4;
+      if (format == ADDON_IMG_FMT_A8R8G8B8)
+      {
+        // Same premultiplied B,G,R,A layout this format wants - no
+        // conversion needed.
+        dst[0] = b;
+        dst[1] = g;
+        dst[2] = r;
+        dst[3] = a;
+      }
+      else // ADDON_IMG_FMT_RGBA8: plain (non-premultiplied) byte order
+      {
+        if (a == 0)
+        {
+          dst[0] = dst[1] = dst[2] = dst[3] = 0;
+        }
+        else
+        {
+          dst[0] = static_cast<uint8_t>(std::min(255u, (r * 255u + a / 2) / a));
+          dst[1] = static_cast<uint8_t>(std::min(255u, (g * 255u + a / 2) / a));
+          dst[2] = static_cast<uint8_t>(std::min(255u, (b * 255u + a / 2) / a));
+          dst[3] = a;
+        }
+      }
+    }
   }
 
   return true;
