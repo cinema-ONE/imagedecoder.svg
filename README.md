@@ -45,10 +45,36 @@ that are easy to get wrong if this addon is ever extended:
   size. Echoing that back as the image's "native" size causes a runaway allocation; using the
   SVG's own export-time `viewBox` (often 24x24) instead causes a blurry GPU upscale. This
   addon reports a fixed 512px long side and hard-caps implausible hints.
-- **Decoding is supersampled 4x and box-averaged down.** plutovg (lunasvg's rasterizer) always
-  antialiases, but its coverage-to-alpha mapping is linear, unlike FreeType's gamma-tuned text
-  path, so edges otherwise read as harder than a matching font glyph. Box-averaging is exact
-  here because lunasvg's bitmap is premultiplied.
+- **An SVG can opt into a higher decode resolution by declaring one.** If the file's own
+  `width`/`height` exceed the 512px default, that size is used instead (clamped to 4096). This
+  is the only lever an asset author has, because neither the skin control's size nor the output
+  resolution ever reaches the decoder - see below. A declaration can only raise the resolution,
+  never lower it.
+- **No supersampling.** plutovg computes analytic coverage antialiasing at whatever size it is
+  handed, so rendering straight at the target size is both cheaper and no worse than rendering
+  4x and averaging down.
+
+### Why an SVG can look softer than a font glyph
+
+An earlier version of these notes blamed plutovg's "linear coverage-to-alpha mapping, unlike
+FreeType's gamma-tuned text path". That is wrong: Kodi rasterizes glyphs with plain
+`FT_RENDER_MODE_NORMAL` and applies no gamma correction anywhere in `GUIFontTTF.cpp`. The real
+differences are elsewhere.
+
+- **Hinting.** `GUIFontTTF.cpp` loads glyphs with `FT_LOAD_TARGET_LIGHT`, so FreeType grid-fits
+  stems onto pixel boundaries. lunasvg/plutovg do no grid-fitting at all, so an unhinted edge
+  straddles pixels where a hinted one lands cleanly. This is not an antialiasing-quality
+  difference.
+- **Decode size.** A font glyph is always rasterized into the atlas at its final pixel size. A
+  skin `<texture>` is not: `CGUITextureManager::Load()` calls `CTexture::LoadFromFile(strPath)`
+  with no ideal width/height, so `CTexture::LoadIImage` falls back to whatever size this addon
+  reports, and the GPU rescales from there to the control size. Measured on a real Kodi: three
+  controls declared at 100, 400 and 800 skin px all produced a decode request of `512x512`, and
+  the same was true at both 1920x1080 and 3840x2160 output. Neither the control size nor the
+  output resolution reaches the decoder - which is why an SVG's own declared size is the only
+  way to opt an asset into rendering natively on a 4K screen.
+- **No mipmaps.** `SetMipmapping()` is called only by the slideshow and RetroPlayer shader
+  code, never by the skin texture path, so that GPU rescale is plain bilinear.
 
 ## Build instructions
 

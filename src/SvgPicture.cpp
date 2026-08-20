@@ -65,16 +65,26 @@ bool SvgPicture::LoadImageFromMemory(const std::string& mimetype,
       docHeight = kNativeSize;
     }
 
+    // An SVG declaring a width/height larger than kNativeSize is asking to be
+    // decoded at that resolution - the only way to opt one asset into
+    // rendering natively on a 4K screen, since neither the control size nor
+    // the output resolution ever reaches this addon. Clamped so a declaration
+    // can only raise the resolution: honouring a small declared size would
+    // decode an icon far below the size it is actually drawn at.
+    const double longSide = std::max(docWidth, docHeight);
+    const double target = std::clamp(longSide, static_cast<double>(kNativeSize),
+                                     static_cast<double>(kMaxPlausibleHint));
+
     const double aspect = docWidth / docHeight;
     if (aspect >= 1.0)
     {
-      width = kNativeSize;
-      height = static_cast<unsigned int>(kNativeSize / aspect + 0.5);
+      width = static_cast<unsigned int>(target + 0.5);
+      height = static_cast<unsigned int>(target / aspect + 0.5);
     }
     else
     {
-      height = kNativeSize;
-      width = static_cast<unsigned int>(kNativeSize * aspect + 0.5);
+      height = static_cast<unsigned int>(target + 0.5);
+      width = static_cast<unsigned int>(target * aspect + 0.5);
     }
   }
 
@@ -110,7 +120,7 @@ bool SvgPicture::Decode(uint8_t* pixels,
   kodi::Log(ADDON_LOG_DEBUG, "%s: Kodi requested decode at %ux%u", __func__, width, height);
 
   // Decode() gets its size from Kodi independently of LoadImageFromMemory(),
-  // so re-check rather than risk a runaway supersampled allocation.
+  // so re-check rather than risk a runaway allocation.
   if (width > kMaxPlausibleHint || height > kMaxPlausibleHint)
   {
     kodi::Log(ADDON_LOG_ERROR, "%s: Refusing implausible decode size %ux%u", __func__, width,
@@ -118,57 +128,36 @@ bool SvgPicture::Decode(uint8_t* pixels,
     return false;
   }
 
-  // plutovg antialiases with a linear coverage-to-alpha mapping, unlike
-  // FreeType's gamma-tuned text path, so edges read harder at matching
-  // resolution. Box-averaging a 4x render closes the gap, and is exact because
-  // lunasvg's bitmap is premultiplied.
-  constexpr unsigned int kSupersample = 4;
-  const unsigned int renderWidth = width * kSupersample;
-  const unsigned int renderHeight = height * kSupersample;
-
-  lunasvg::Bitmap hiRes = m_document->renderToBitmap(static_cast<int>(renderWidth),
-                                                      static_cast<int>(renderHeight));
-  if (hiRes.isNull())
+  // plutovg computes analytic coverage antialiasing at whatever size it is
+  // given, so rendering straight at the target size is both cheaper and no
+  // worse than supersampling and averaging back down.
+  lunasvg::Bitmap bitmap =
+      m_document->renderToBitmap(static_cast<int>(width), static_cast<int>(height));
+  if (bitmap.isNull())
   {
-    kodi::Log(ADDON_LOG_ERROR, "%s: Rendering SVG to %ux%u failed", __func__, renderWidth,
-              renderHeight);
+    kodi::Log(ADDON_LOG_ERROR, "%s: Rendering SVG to %ux%u failed", __func__, width, height);
     return false;
   }
 
-  constexpr unsigned int kSamples = kSupersample * kSupersample;
-  const uint8_t* src = hiRes.data();
-  const unsigned int srcStride = static_cast<unsigned int>(hiRes.stride());
+  const uint8_t* src = bitmap.data();
+  const unsigned int srcStride = static_cast<unsigned int>(bitmap.stride());
 
   for (unsigned int y = 0; y < height; ++y)
   {
+    const uint8_t* srcRow = src + y * srcStride;
     uint8_t* dstRow = pixels + y * pitch;
     for (unsigned int x = 0; x < width; ++x)
     {
-      unsigned int sumB = 0, sumG = 0, sumR = 0, sumA = 0;
-      for (unsigned int sy = 0; sy < kSupersample; ++sy)
-      {
-        const uint8_t* srcPx = src + (y * kSupersample + sy) * srcStride + (x * kSupersample) * 4;
-        for (unsigned int sx = 0; sx < kSupersample; ++sx)
-        {
-          sumB += srcPx[0];
-          sumG += srcPx[1];
-          sumR += srcPx[2];
-          sumA += srcPx[3];
-          srcPx += 4;
-        }
-      }
       // lunasvg's native premultiplied ARGB32 is already B,G,R,A in memory on
       // a little-endian target.
-      const uint8_t b = static_cast<uint8_t>((sumB + kSamples / 2) / kSamples);
-      const uint8_t g = static_cast<uint8_t>((sumG + kSamples / 2) / kSamples);
-      const uint8_t r = static_cast<uint8_t>((sumR + kSamples / 2) / kSamples);
-      const uint8_t a = static_cast<uint8_t>((sumA + kSamples / 2) / kSamples);
+      const uint8_t b = srcRow[x * 4 + 0];
+      const uint8_t g = srcRow[x * 4 + 1];
+      const uint8_t r = srcRow[x * 4 + 2];
+      const uint8_t a = srcRow[x * 4 + 3];
 
       uint8_t* dst = dstRow + x * 4;
       if (format == ADDON_IMG_FMT_A8R8G8B8)
       {
-        // Same premultiplied B,G,R,A layout this format wants - no
-        // conversion needed.
         dst[0] = b;
         dst[1] = g;
         dst[2] = r;
@@ -190,7 +179,6 @@ bool SvgPicture::Decode(uint8_t* pixels,
       }
     }
   }
-
   return true;
 }
 
