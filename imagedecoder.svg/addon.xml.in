@@ -13,11 +13,8 @@
         <extension>.svg</extension>
         <description>Scalable Vector Graphics</description>
       </mimetype>
-      <!-- Kodi's own ImageFactory::CreateLoader() (guilib/imagefactory.cpp) builds the
-           mimetype it looks up as "image/"+CURL::GetFileType() whenever the file extension
-           is non-empty - which it is for any plain <texture>foo.svg</texture> skin reference -
-           bypassing the correct CMime::GetMimeType() -> image/svg+xml lookup entirely. Declare
-           this non-standard "image/svg" too so that actual skin texture loading matches. -->
+      <!-- Non-standard, but Kodi's texture loader derives the mimetype as
+           "image/" + extension for a plain <texture>foo.svg</texture>. -->
       <mimetype name="image/svg">
         <extension>.svg</extension>
         <description>Scalable Vector Graphics</description>

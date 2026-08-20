@@ -19,10 +19,7 @@ SvgPicture::SvgPicture(const kodi::addon::IInstanceInfo& instance)
 
 bool SvgPicture::SupportsFile(const std::string& file)
 {
-  // Cheap sniff: real validation happens in LoadImageFromMemory() via
-  // lunasvg's own parser. We only rule out files that can't possibly be SVG
-  // (too small to contain a "<svg" tag, or missing it within a sane header
-  // window) to avoid claiming support for arbitrary XML files that aren't SVG.
+  // Cheap sniff only - lunasvg's parser does the real validation later.
   kodi::vfs::CFile fileData;
   if (!fileData.OpenFile(file))
     return false;
@@ -37,20 +34,9 @@ bool SvgPicture::SupportsFile(const std::string& file)
 
 namespace
 {
-// Kodi's skin texture path (CTexture::LoadIImage) always calls
-// LoadImageFromMemory with its GPU's maxTextureSize (e.g. 16383) as the
-// in/out width/height - confirmed via kodi.log showing exactly that value
-// requested for a 90px-tall control. That's a generic upper-bound cap, not a
-// real per-control size hint: when the control itself has no explicit ideal
-// size to pass down, Kodi falls back to whatever this function reports as
-// the image's "native" size and decodes at that. Echoing the cap straight
-// back (as if it were a genuine request) is what caused a later runaway
-// supersampled allocation; echoing the SVG's own tiny export-time viewBox
-// size (e.g. 24x24) is what caused the original blurry/aliased icon, since
-// that then gets GPU-upscaled ~4x with no say from us. Neither the cap nor
-// the raw viewBox is a usable "native size" for a vector image, so we report
-// a fixed, decent resolution instead whenever the incoming hint doesn't look
-// like a genuine specific request.
+// Kodi passes its GPU maxTextureSize as an upper bound, not a real per-control
+// request, and an SVG's own viewBox is usually far too small to serve as a
+// native size. Report a fixed one instead. See README for the full reasoning.
 constexpr unsigned int kNativeSize = 512;
 constexpr unsigned int kMaxPlausibleHint = 4096; // no UI icon control asks for more than this
 } // namespace
@@ -113,10 +99,7 @@ bool SvgPicture::Decode(uint8_t* pixels,
 
   if (format != ADDON_IMG_FMT_RGBA8 && format != ADDON_IMG_FMT_A8R8G8B8)
   {
-    // Kodi's skin texture path actually requests ADDON_IMG_FMT_A8R8G8B8, not
-    // RGBA8 as originally assumed - keeping this deliberately narrow to just
-    // the two byte orders actually observed/needed rather than all four
-    // ADDON_IMG_FMT_* variants.
+    // Deliberately narrow: only the two byte orders Kodi actually asks for.
     kodi::Log(ADDON_LOG_ERROR,
               "%s: Unsupported target format (%d), only ADDON_IMG_FMT_RGBA8/A8R8G8B8 are "
               "implemented",
@@ -126,10 +109,8 @@ bool SvgPicture::Decode(uint8_t* pixels,
 
   kodi::Log(ADDON_LOG_DEBUG, "%s: Kodi requested decode at %ux%u", __func__, width, height);
 
-  // Hard safety net: LoadImageFromMemory() is what should normally keep this
-  // sane (see kMaxPlausibleHint there), but Decode()'s width/height come from
-  // Kodi independently of that - refuse anything absurd outright rather than
-  // ever again attempting a multi-gigabyte supersampled allocation.
+  // Decode() gets its size from Kodi independently of LoadImageFromMemory(),
+  // so re-check rather than risk a runaway supersampled allocation.
   if (width > kMaxPlausibleHint || height > kMaxPlausibleHint)
   {
     kodi::Log(ADDON_LOG_ERROR, "%s: Refusing implausible decode size %ux%u", __func__, width,
@@ -137,16 +118,10 @@ bool SvgPicture::Decode(uint8_t* pixels,
     return false;
   }
 
-  // plutovg (lunasvg's rasterizer) is a fork of FreeType's own "smooth"
-  // scanline rasterizer and always renders with AA on, so it isn't that the
-  // SVG comes out unantialiased - but its coverage-to-alpha mapping is a
-  // plain linear one, unlike FreeType's text path which is perceptually
-  // gamma-tuned, so edges read as harder even at the same target resolution.
-  // Rendering at a higher internal resolution and box-averaging back down
-  // closes most of that gap. The averaging is exact here because lunasvg's
-  // native bitmap is premultiplied alpha - a plain per-channel mean over each
-  // NxN block is a correct downsample with no straight-alpha color bleed at
-  // partially-transparent edges.
+  // plutovg antialiases with a linear coverage-to-alpha mapping, unlike
+  // FreeType's gamma-tuned text path, so edges read harder at matching
+  // resolution. Box-averaging a 4x render closes the gap, and is exact because
+  // lunasvg's bitmap is premultiplied.
   constexpr unsigned int kSupersample = 4;
   const unsigned int renderWidth = width * kSupersample;
   const unsigned int renderHeight = height * kSupersample;
