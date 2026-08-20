@@ -45,11 +45,17 @@ that are easy to get wrong if this addon is ever extended:
   size. Echoing that back as the image's "native" size causes a runaway allocation; using the
   SVG's own export-time `viewBox` (often 24x24) instead causes a blurry GPU upscale. This
   addon reports a fixed 512px long side and hard-caps implausible hints.
-- **An SVG can opt into a higher decode resolution by declaring one.** If the file's own
-  `width`/`height` exceed the 512px default, that size is used instead (clamped to 4096). This
-  is the only lever an asset author has, because neither the skin control's size nor the output
-  resolution ever reaches the decoder - see below. A declaration can only raise the resolution,
-  never lower it.
+- **The size an SVG declares is the size it is decoded at.** Neither the skin control's size
+  nor the output resolution reaches an image decoder (see below), so the file itself is the only
+  place the intended resolution can be expressed. An icon meant to be drawn at 100 units on
+  Kodi's 1080 skin grid - 200px on a 4K screen - declares `width="200"` and is rasterized at
+  exactly that, rendering natively there and downscaling 2x at 1080p.
+
+  Only an upper bound is enforced (4096px), to stop a malformed file requesting an allocation
+  that is never a plausible UI texture. Below that the file is trusted: a file declaring
+  `width="24"` really is decoded at 24 and will look poor if drawn larger, which is the
+  caller's responsibility. The 512px default applies only to a file declaring no usable size at
+  all - rare, since lunasvg falls back to the viewBox when `width`/`height` are absent.
 - **No supersampling.** plutovg computes analytic coverage antialiasing at whatever size it is
   handed, so rendering straight at the target size is both cheaper and no worse than rendering
   4x and averaging down.

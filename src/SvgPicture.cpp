@@ -65,27 +65,25 @@ bool SvgPicture::LoadImageFromMemory(const std::string& mimetype,
       docHeight = kNativeSize;
     }
 
-    // An SVG declaring a width/height larger than kNativeSize is asking to be
-    // decoded at that resolution - the only way to opt one asset into
-    // rendering natively on a 4K screen, since neither the control size nor
-    // the output resolution ever reaches this addon. Clamped so a declaration
-    // can only raise the resolution: honouring a small declared size would
-    // decode an icon far below the size it is actually drawn at.
+    // The size the SVG declares is the size it gets decoded at. Neither the
+    // skin control's size nor the output resolution ever reaches an image
+    // decoder, so the file itself is the only place the intended resolution
+    // can be expressed - an asset meant to be drawn at 200px on a 4K screen
+    // says so, and gets rasterized at exactly that. kNativeSize is only the
+    // fallback for a file that declares no usable size at all.
+    //
+    // Only an upper bound is enforced, to keep a malformed or hostile file
+    // from asking for an allocation that is never a plausible UI texture.
     const double longSide = std::max(docWidth, docHeight);
-    const double target = std::clamp(longSide, static_cast<double>(kNativeSize),
-                                     static_cast<double>(kMaxPlausibleHint));
+    if (longSide > kMaxPlausibleHint)
+    {
+      const double shrink = kMaxPlausibleHint / longSide;
+      docWidth *= shrink;
+      docHeight *= shrink;
+    }
 
-    const double aspect = docWidth / docHeight;
-    if (aspect >= 1.0)
-    {
-      width = static_cast<unsigned int>(target + 0.5);
-      height = static_cast<unsigned int>(target / aspect + 0.5);
-    }
-    else
-    {
-      height = static_cast<unsigned int>(target + 0.5);
-      width = static_cast<unsigned int>(target * aspect + 0.5);
-    }
+    width = static_cast<unsigned int>(docWidth + 0.5);
+    height = static_cast<unsigned int>(docHeight + 0.5);
   }
 
   if (width == 0 || height == 0)
