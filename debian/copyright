@@ -6,6 +6,16 @@ Files: *
 Copyright: 2026 cinemaONE
 License: GPL-2.0-or-later
 
+Files: resources/icon.png
+Copyright: 2006 Harvey Rayner, adopted by W3C in 2009
+License: CC-BY-SA-4.0 or public-domain
+ The W3C SVG logo, from https://www.w3.org/Graphics/SVG/ via
+ https://commons.wikimedia.org/wiki/File:SVG_Logo.svg, where it is tagged both public domain
+ (below the threshold of originality) and CC BY-SA 4.0
+ <https://creativecommons.org/licenses/by-sa/4.0/>. Rasterized to a 256x256 PNG; no other
+ change. W3C's logo terms <https://www.w3.org/2009/08/svg-logos.html> encourage use by
+ software that renders SVG natively without plug-ins.
+
 License: GPL-2.0-or-later
  This program is free software; you can redistribute it and/or modify
  it under the terms of the GNU General Public License as published by

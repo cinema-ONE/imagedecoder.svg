@@ -78,3 +78,12 @@ lunasvg/plutovg runtime dependency.
 
 GPL-2.0-or-later, matching Kodi's own `imagedecoder.*` addons. `lunasvg` and `plutovg` are MIT
 licensed.
+
+`resources/icon.png` is the [W3C SVG logo](https://www.w3.org/Graphics/SVG/), designed by
+Harvey Rayner for the 2006 SVG Logo Contest and adopted by W3C in 2009. Taken from
+[Wikimedia Commons](https://commons.wikimedia.org/wiki/File:SVG_Logo.svg), where it is tagged
+both public domain (below the threshold of originality) and
+[CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/); the only change made was
+rasterizing it to a 256x256 PNG. W3C's own
+[SVG logo terms](https://www.w3.org/2009/08/svg-logos.html) explicitly encourage its use by
+software that renders SVG natively without plug-ins, which is what this addon does.

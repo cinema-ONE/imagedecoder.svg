@@ -28,7 +28,7 @@
     <platform>@PLATFORM@</platform>
     <license>GPL-2.0-or-later</license>
     <assets>
-      <icon>icon.png</icon>
+      <icon>resources/icon.png</icon>
     </assets>
     <summary lang="en_GB">SVG file format decoder</summary>
     <description lang="en_GB">Scalable Vector Graphics (SVG) is a vector image format, rendered
