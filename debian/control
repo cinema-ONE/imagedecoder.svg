@@ -1,0 +1,21 @@
+Source: kodi-imagedecoder-svg
+Priority: extra
+Maintainer: cinemaONE <adrian.betschart@cinemaone.ch>
+Build-Depends: debhelper (>= 8.0.0), cmake,
+               kodi-addon-dev, liblunasvg-dev
+Standards-Version: 3.9.8
+Section: libs
+
+Package: kodi-imagedecoder-svg
+Section: libs
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: SVG image decoder for Kodi
+  SVG image decoder for Kodi
+
+Package: kodi-imagedecoder-svg-dbg
+Section: debug
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: debug symbols for SVG image decoder for Kodi
+  debug symbols for SVG image decoder for Kodi
