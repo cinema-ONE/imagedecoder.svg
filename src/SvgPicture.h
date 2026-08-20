@@ -11,6 +11,8 @@
 
 #include <lunasvg.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
 class ATTR_DLL_LOCAL SvgPicture : public kodi::addon::CInstanceImageDecoder

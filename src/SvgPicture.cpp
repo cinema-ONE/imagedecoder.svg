@@ -10,6 +10,7 @@
 #include <kodi/Filesystem.h>
 
 #include <algorithm>
+#include <cstring>
 
 SvgPicture::SvgPicture(const kodi::addon::IInstanceInfo& instance)
   : CInstanceImageDecoder(instance)
