@@ -1,88 +1,80 @@
-# imagedecoder.svg
+# imagedecoder.svg addon for Kodi
 
-An SVG image decoder add-on for Kodi, using [lunasvg](https://github.com/sammycage/lunasvg)
-(MIT licensed) for parsing/rasterization.
+This is a [Kodi](https://kodi.tv) image decoder addon for SVG (Scalable Vector Graphics)
+images, rasterizing via [lunasvg](https://github.com/sammycage/lunasvg) (MIT licensed).
 
-## Why this exists
+Kodi has no built-in SVG support — a skin `<texture>` tag can only reference raster formats.
+This addon plugs into Kodi's existing, generic `kodi.imagedecoder` extension point (the same
+one `imagedecoder.heif`, `imagedecoder.raw` and `imagedecoder.mpo` use), so once it is
+installed and enabled, any `<texture>` reference to a `.svg` file renders through it
+automatically — no core Kodi change and no skin-side registration required. Image decoders are
+looked up globally by add-on type and MIME type, independent of which skin is active.
 
-This is a companion project to [`plex-for-kodi`](https://github.com/pannal/plex-for-kodi) /
-[`skin.plextuary`](https://github.com/pannal/skin.plextuary)'s icon-font investigation (see
-Goal 2 in that project's `CLAUDE.md`). Kodi has no native SVG support — skin `<texture>` tags
-can only reference raster formats. But Kodi *does* have a generic, pluggable image-decoder
-extension point (`kodi.imagedecoder` / `kodi::addon::CInstanceImageDecoder`) already used in
-production by `imagedecoder.heif`, `imagedecoder.raw`, and `imagedecoder.mpo` — and confirmed
-(by reading Kodi's actual source) that the skin texture loading path
-(`CTexture::LoadFromFileInternal` → `ImageFactory::CreateLoaderFromMimeType`) already checks
-this registry before falling back to the built-in FFmpeg-based decoder. Kodi's `Mime.cpp` also
-already maps `.svg` → `image/svg+xml`. So the only missing piece is an actual add-on
-implementing the interface — this repo.
+Because SVG is vector data, each texture is rasterized at the size Kodi actually asks for
+rather than being scaled up from a fixed-size bitmap, so a single `.svg` stays sharp at any
+resolution instead of needing a per-resolution PNG ladder.
 
-Once installed and enabled (regardless of which skin is active — image decoders are looked up
-globally by add-on type, unlike fonts, which are tied to the active skin), any `<texture>` tag
-anywhere that references an `.svg` file should render through this decoder automatically, with
-no core Kodi changes and no skin-side registration required.
+## Status
 
-## Status: untested scaffold (2026-07-15)
+Built, cross-compiled for aarch64, and confirmed working end-to-end on real hardware
+(Ugoos SK1 running CoreELEC), rendering SVG textures through the normal Kodi skin texture path
+with correct transparency.
 
-This has **not been built or run against a real Kodi instance yet**. The decoder logic
-(`src/SvgPicture.cpp`) is written against the real, current `CInstanceImageDecoder` interface
-and the real `lunasvg` API (both verified against their actual upstream source, not guessed),
-and mirrors the structure of `imagedecoder.heif` (a real, shipped Kodi add-on) as closely as
-possible. But it needs an actual CMake build against Kodi's dev-kit headers and a real lunasvg
-install to confirm it compiles and works — that hasn't happened yet. IDE errors about missing
-`kodi/addon-instance/ImageDecoder.h` or `lunasvg.h` are expected until that build environment
-exists; they are not code bugs.
+> [!NOTE]
+> Correct **transparency** additionally requires a core Kodi fix: `CImageDecoder` never set
+> `IImage::m_hasAlpha`, so every `kodi.imagedecoder` addon's output was treated as fully
+> opaque. Without that fix SVG textures render with a black background. The fix is generic
+> (it benefits `imagedecoder.heif`/`.raw`/`.mpo` equally) and is being upstreamed separately
+> to `xbmc/xbmc`.
 
-### What's implemented
+## Implementation notes
 
-- `SupportsFile()`: cheap sniff for a `<svg`/`<?xml` tag in the first 512 bytes. Real validation
-  happens via lunasvg's own parser in `LoadImageFromMemory()`.
-- `LoadImageFromMemory()`: parses the SVG via `lunasvg::Document::loadFromData()` and stores the
-  parsed document. If Kodi passes a non-zero requested width/height, that's honored as-is
-  (SVG is vector data — there's no "native" pixel size to report back, unlike a raster decoder);
-  otherwise falls back to the SVG's own intrinsic width/height.
-- `Decode()`: rasterizes the *already-parsed* document at exactly the width/height Kodi asks
-  for via `Document::renderToBitmap()`, then converts lunasvg's ARGB32-premultiplied output to
-  plain RGBA via `Bitmap::convertToRGBA()` and copies it into Kodi's output buffer. Only
-  `ADDON_IMG_FMT_RGBA8` is implemented for now — that's the format Kodi's skin texture path
-  needs; the other three `ADDON_IMG_FMT_*` variants can be added later if something else needs
-  them.
-- `ReadTag()` (EXIF-style metadata) is intentionally not implemented — not relevant for icon
-  SVGs, and the interface treats it as optional (default returns `false`).
+Details that were established by reading Kodi's actual source and confirming on hardware, and
+that are easy to get wrong if this addon is ever extended:
 
-### What's not done yet
+- **Two MIME types are declared, not one.** For a bare `<texture>foo.svg</texture>` skin
+  reference, Kodi's texture loader builds the MIME type as `"image/" + <file extension>` —
+  literally `image/svg` — rather than consulting its own `CMime` table, which would correctly
+  give `image/svg+xml`. Both are declared in `addon.xml.in` so real skin texture loading
+  actually matches.
+- **The requested pixel format is `ADDON_IMG_FMT_A8R8G8B8`,** not `RGBA8` as might be assumed.
+  lunasvg's native premultiplied ARGB32 bitmap is already byte-identical to this, so that path
+  is a direct copy with no conversion.
+- **Kodi's width/height argument is an upper bound, not a request.** The skin texture path
+  passes the GPU's `maxTextureSize` (16383 observed) when the control has no explicit ideal
+  size. Echoing that back as the image's "native" size causes a runaway allocation; using the
+  SVG's own export-time `viewBox` (often 24x24) instead causes a blurry GPU upscale. This
+  addon reports a fixed 512px long side and hard-caps implausible hints.
+- **Decoding is supersampled 4x and box-averaged down.** plutovg (lunasvg's rasterizer) always
+  antialiases, but its coverage-to-alpha mapping is linear, unlike FreeType's gamma-tuned text
+  path, so edges otherwise read as harder than a matching font glyph. Box-averaging is exact
+  here because lunasvg's bitmap is premultiplied.
 
-- No actual build attempted — `CMakeLists.txt`/`FindLunaSVG.cmake` follow the same pattern as
-  `imagedecoder.heif`'s real, working build files, but haven't been run.
-- No CI (`imagedecoder.heif` has Jenkins/Azure Pipelines configs tied to Kodi's own official
-  multi-platform build farm, which this repo doesn't have access to).
-- No `resources/language/resource.language.en_gb/strings.po` — the `addon.xml.in` uses a plain
-  literal `<description>` instead of a numbered string reference for that reason.
-- No icon/fanart assets.
-- Not tested against real `.svg` files, real Kodi skin `<texture>` references, or a real Kodi
-  build at all.
+## Build instructions
 
-## Building (once a real attempt happens)
+When building the addon you have to use the correct branch depending on which version of Kodi
+you are building against. For example, if you are building the `master` branch of Kodi you
+should checkout the `master` branch of this repository.
 
-Same general shape as any other out-of-tree Kodi binary add-on:
+### Linux
 
-1. A `find_package(Kodi REQUIRED)`-compatible Kodi dev-kit checkout (typically built alongside
-   Kodi's own `cmake/addons` tooling, or via Kodi's binary-addons build scripts).
-2. A `lunasvg` install discoverable via `pkg-config` or `find_library`/`find_path` (see
-   `FindLunaSVG.cmake`).
-3. Standard CMake out-of-tree build:
-   ```
-   mkdir build && cd build
-   cmake -DADDONS_TO_BUILD=imagedecoder.svg \
-         -DADDON_SRC_PREFIX=../.. \
-         -DCMAKE_BUILD_TYPE=Debug \
-         -DPACKAGE_ZIP=1 <path-to-kodi>/cmake/addons
-   make
-   ```
-   (This mirrors `imagedecoder.heif`'s own build instructions — adjust once this is actually
-   tried against a real Kodi checkout.)
+The following instructions assume you will have built Kodi already in the `kodi-build`
+directory suggested by the Kodi README.
+
+1. `git clone https://github.com/xbmc/xbmc.git`
+2. `git clone https://github.com/cinema-ONE/imagedecoder.svg.git`
+3. `cd imagedecoder.svg && mkdir build && cd build`
+4. `cmake -DADDONS_TO_BUILD=imagedecoder.svg -DADDON_SRC_PREFIX=../.. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=../../xbmc/kodi-build/addons -DPACKAGE_ZIP=1 ../../xbmc/cmake/addons`
+5. `make`
+
+The addon files will be placed in `../../xbmc/kodi-build/addons`, so if you build Kodi from
+source and run it directly the addon will be available as a system addon.
+
+`lunasvg` is pulled and built automatically by Kodi's addon dependency system from
+`depends/common/lunasvg/`, and is linked statically, so the built addon has no external
+lunasvg/plutovg runtime dependency.
 
 ## License
 
-GPL-2.0-or-later, matching Kodi's own `imagedecoder.*` add-ons and `plex-for-kodi`. `lunasvg`
-itself is MIT licensed.
+GPL-2.0-or-later, matching Kodi's own `imagedecoder.*` addons. `lunasvg` and `plutovg` are MIT
+licensed.
