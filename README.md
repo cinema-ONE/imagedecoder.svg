@@ -76,6 +76,28 @@ differences are elsewhere.
 - **No mipmaps.** `SetMipmapping()` is called only by the slideshow and RetroPlayer shader
   code, never by the skin texture path, so that GPU rescale is plain bilinear.
 
+### Decode resolution is per-file, not per-use
+
+The size an SVG is decoded at comes from the file, and one file gets one decode resolution no
+matter how many controls draw it. A consuming add-on cannot ask for a different size per use:
+`ImageFactory::CreateLoader()` uses the filename only to derive `"image/" + extension` and then
+discards it, and the decoder is constructed with the mimetype alone. `SupportsFile()` - the one
+interface method that takes a filename - is called for audio decoders and the file-extension
+provider, never for image decoders. So the addon does not know which file it is decoding, nor
+at what size it will be drawn.
+
+For one piece of artwork used at two sizes, ship two files declaring different `width`/`height`.
+Kodi's texture manager caches by path and would treat them as separate textures regardless, so
+nothing is lost by not sharing the file. Generating the variants from one master fits naturally
+into whatever already produces the artwork.
+
+This is the same shape as the rest of Kodi rather than an anomaly: a skin declares a separate
+`<font>` entry per point size of the same typeface, and raster assets ship per intended size.
+
+Wiring the control's size through would need `CGUITextureManager::Load()` to key its cache on
+(path, size) rather than path alone, since one texture is currently shared by every control
+referencing it. That is a design change to the texture cache, not a small patch.
+
 ## Build instructions
 
 When building the addon you have to use the correct branch depending on which version of Kodi
