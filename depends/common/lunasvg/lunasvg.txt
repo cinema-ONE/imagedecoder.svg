@@ -1,0 +1,1 @@
+lunasvg https://github.com/sammycage/lunasvg/archive/v3.5.0.tar.gz
