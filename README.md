@@ -27,6 +27,46 @@ with correct transparency.
 > (it benefits `imagedecoder.heif`/`.raw`/`.mpo` equally) and has been submitted to
 > `xbmc/xbmc` as [PR #29024](https://github.com/xbmc/xbmc/pull/29024).
 
+## Known limitations
+
+lunasvg is a **static** renderer, and three SVG features it does not implement are worth knowing
+about before reaching for this add-on. All three are silent: the file loads, decoding succeeds,
+and the result is simply missing something.
+
+| Feature | Supported | What you get instead |
+|---|---|---|
+| `<animate>`, `<animateTransform>` | no | the first frame, frozen at its start value |
+| `<filter>` (`feGaussianBlur`, `feBlend`, `feImage`, ...) | no | the unfiltered source graphic |
+| `transform` inside a CSS `style=` attribute | no | the element at the untransformed origin |
+
+The first two are lunasvg's own documented exceptions - it calls out "animation, filters, and
+scripts", and says animation is *unlikely to be supported in the future* because static rendering
+is the design. Filters it describes as something that may be added later. The third is not
+documented anywhere; it was found by testing, and it is the one most likely to be mistaken for a
+bug in this add-on, because the `transform` **attribute** works perfectly and only the CSS
+property form is dropped.
+
+`docs/lunasvg-limitations.svg` exercises all three. Rendered through lunasvg:
+
+![lunasvg limitations](docs/lunasvg-limitations.png)
+
+The green box uses the `transform` attribute and lands correctly. The blue box asks for
+`filter="url(#soft)"` and comes out hard-edged. The red box is positioned with
+`style="transform:translate(300px,40px)"` and has collapsed onto the green one at the origin
+instead of sitting on the right. The small circle carries an `<animate>` and sits at its start
+value.
+
+Practically: this is fine for what the add-on was built for - flat, single-colour icons and
+symbols, which is the overwhelming majority of SVG in a Kodi skin. It is not suitable for
+complex illustrative artwork that leans on filters, and it cannot do animation at all.
+
+Animation would need more than a different renderer, incidentally. The `kodi.imagedecoder`
+extension point has no frame, delay or loop concept anywhere in its C API - `Decode()` fills one
+buffer, once. Kodi's animated textures take an entirely different route
+(`CTextureBundleXBT::LoadAnim`, via the `.gif` branch of `CGUITextureManager::Load`). Supporting
+animated SVG would mean extending `kodi.binary.instance.imagedecoder` with multi-frame output,
+which is an add-on API version bump rather than anything an add-on can do on its own.
+
 ## Implementation notes
 
 Details that were established by reading Kodi's actual source and confirming on hardware, and
