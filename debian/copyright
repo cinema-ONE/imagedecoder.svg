@@ -6,7 +6,7 @@ Files: *
 Copyright: 2026 cinemaONE
 License: GPL-2.0-or-later
 
-Files: resources/icon.png
+Files: imagedecoder.svg/resources/icon.png
 Copyright: 2006 Harvey Rayner, adopted by W3C in 2009
 License: CC-BY-SA-4.0 or public-domain
  The W3C SVG logo, from https://www.w3.org/Graphics/SVG/ via

@@ -20,3 +20,9 @@ imagedecoder.svg/addon.xml
 .DS_Store
 .AppleDouble
 .LSOverride
+
+# local-only working files, never part of the addon
+# (also listed in .git/info/exclude, but that is not shared and is lost on a
+#  fresh clone - keep them here too now that this repo is public)
+/.dev/
+/CLAUDE.md

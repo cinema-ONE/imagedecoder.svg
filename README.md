@@ -24,8 +24,8 @@ with correct transparency.
 > Correct **transparency** additionally requires a core Kodi fix: `CImageDecoder` never set
 > `IImage::m_hasAlpha`, so every `kodi.imagedecoder` addon's output was treated as fully
 > opaque. Without that fix SVG textures render with a black background. The fix is generic
-> (it benefits `imagedecoder.heif`/`.raw`/`.mpo` equally) and is being upstreamed separately
-> to `xbmc/xbmc`.
+> (it benefits `imagedecoder.heif`/`.raw`/`.mpo` equally) and has been submitted to
+> `xbmc/xbmc` as [PR #29024](https://github.com/xbmc/xbmc/pull/29024).
 
 ## Implementation notes
 
@@ -80,7 +80,36 @@ differences are elsewhere.
   output resolution reaches the decoder - which is why an SVG's own declared size is the only
   way to opt an asset into rendering natively on a 4K screen.
 - **No mipmaps.** `SetMipmapping()` is called only by the slideshow and RetroPlayer shader
-  code, never by the skin texture path, so that GPU rescale is plain bilinear.
+  code, never by the skin texture path, so that GPU rescale is plain bilinear. Note this
+  applies to the *normal* texture path only - see below.
+
+### Smoother downscaling via `background="true"`
+
+The bilinear-minification softness above can be avoided from the skin side. A
+`<texture background="true">` sets `CTextureInfo::useLarge`, which routes the texture through
+`CGUILargeTextureManager` instead of `CGUITextureManager::Load()`. That path passes the
+control's size down to `CTexture::LoadFromFile()`, so the image is resampled on the CPU to the
+size it is drawn at rather than handed to the GPU oversized and minified bilinearly.
+
+Measured on a 4K output with a 1080 skin grid, drawing this addon's output against the same
+outline rendered as a font glyph (mid-tone fraction along the edges; higher means a smoother
+antialiased ramp):
+
+| control size | font glyph | plain `<texture>` | `background="true"` |
+|---|---|---|---|
+| 18 skin px | 46.7% | 14.2% | 45.5% |
+| 36 skin px | 26.1% | 14.8% | 25.7% |
+| 72 skin px | 13.6% | 13.9% | 14.6% |
+
+Two caveats, both consequences of `CTextureCache` being keyed on URL alone:
+
+- **The first use of a file is not resampled.** It runs before the cache holds a raster, takes
+  the `CacheImage()` fallthrough in `CImageLoader::DoWork()`, and comes back looking like the
+  plain path. Only later requests load the cached copy through
+  `LoadFromFile(cached, targetW, targetH, ...)`.
+- **It is still one raster per file, at the size this addon decoded it.** `background="true"`
+  buys resampling, not per-use re-rasterization, so it does not change the "decode resolution is
+  per-file" rule below - an SVG drawn *larger* than its declared size gains nothing from it.
 
 ### Decode resolution is per-file, not per-use
 
@@ -133,7 +162,7 @@ lunasvg/plutovg runtime dependency.
 GPL-2.0-or-later, matching Kodi's own `imagedecoder.*` addons. `lunasvg` and `plutovg` are MIT
 licensed.
 
-`resources/icon.png` is the [W3C SVG logo](https://www.w3.org/Graphics/SVG/), designed by
+`imagedecoder.svg/resources/icon.png` is the [W3C SVG logo](https://www.w3.org/Graphics/SVG/), designed by
 Harvey Rayner for the 2006 SVG Logo Contest and adopted by W3C in 2009. Taken from
 [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:SVG_Logo.svg), where it is tagged
 both public domain (below the threshold of originality) and
