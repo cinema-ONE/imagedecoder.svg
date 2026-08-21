@@ -170,3 +170,5 @@ both public domain (below the threshold of originality) and
 rasterizing it to a 256x256 PNG. W3C's own
 [SVG logo terms](https://www.w3.org/2009/08/svg-logos.html) explicitly encourage its use by
 software that renders SVG natively without plug-ins, which is what this addon does.
+
+This project is written with AI assistance, and says so rather than leaving it to be inferred.
